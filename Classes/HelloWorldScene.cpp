@@ -1,5 +1,7 @@
 #include "HelloWorldScene.h"
 
+#include "LineDrawer.hpp"
+
 USING_NS_CC;
 
 Scene* HelloWorld::createScene()
@@ -27,6 +29,7 @@ bool HelloWorld::init()
         return false;
     }
     
+    /*
     Size visibleSize = Director::getInstance()->getVisibleSize();
     Vec2 origin = Director::getInstance()->getVisibleOrigin();
 
@@ -71,10 +74,14 @@ bool HelloWorld::init()
 
     // add the sprite as a child to this layer
     this->addChild(sprite, 0);
+     */
+    
+    auto drawer = LineDrawer::create();
+    this->addChild(drawer);
+    
     
     return true;
 }
-
 
 void HelloWorld::menuCloseCallback(Ref* pSender)
 {
