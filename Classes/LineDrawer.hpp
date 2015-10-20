@@ -18,6 +18,7 @@ struct LinePoint {
     float width;
     
     LinePoint (Vec2 p, float w) : pos(p), width(w) {}
+    LinePoint() : pos {0, 0}, width {1.0} {}
 };
 
 class LineDrawer : public Node {
@@ -38,7 +39,7 @@ public:
         return node;
     }
     
-    LineDrawer () : _overdraw(.5) {}
+    LineDrawer () : _overdraw(.5), _enableLineSmoothing(true) {}
     ~LineDrawer() {
         if (_renderTexture != nullptr)
             _renderTexture->release();
@@ -93,9 +94,9 @@ public:
     
     static void triangulateRect(Vec2 A, Color4F a, Vec2 B, Color4F b, Vec2 C, Color4F c, Vec2 D, Color4F d, std::vector<V3F_C4B_T2F> &vertices, std::vector<unsigned short> &indices, float z)
     {
-        CCLOG("triangulate rect (%.2f %.2f) (%.2f %.2f) (%.2f %.2f) (%.2f %.2f)", A.x, A.y, B.x, B.y, C.x, C.y, D.x, D.y);
+//        CCLOG("triangulate rect (%.2f %.2f) (%.2f %.2f) (%.2f %.2f) (%.2f %.2f)", A.x, A.y, B.x, B.y, C.x, C.y, D.x, D.y);
         
-        int startIndex = vertices.size();
+        auto startIndex = vertices.size();
         
         vertices.push_back(V3F_C4B_T2F {Vec3 {A.x, A.y, z}, Color4B {a}, Tex2F {}});
         vertices.push_back(V3F_C4B_T2F {Vec3 {B.x, B.y, z}, Color4B {b}, Tex2F {}});
@@ -117,8 +118,14 @@ public:
         
         setGLProgramState(GLProgramState::getOrCreateWithGLProgramName(GLProgram::SHADER_NAME_POSITION_COLOR));
         if (_points.size() > 2) {
-            drawLines(renderer, transform, _points, Color4F {0, 0, 0, 1});
-            CCLOG("clear points %lu", _points.size());
+            Color4F brushColor {0, 0, 0, 1};
+            if (_enableLineSmoothing) {
+                auto smoothPoints = smoothLinePoints(_points);
+                drawLines(renderer, transform, smoothPoints, brushColor);
+            }
+            else {
+                drawLines(renderer, transform, _points, brushColor);
+            }
             _points.erase(_points.begin(), _points.end() - 2);
         }
         
@@ -200,6 +207,44 @@ public:
         
     }
     
+    static std::vector<LinePoint> smoothLinePoints(std::vector<LinePoint> &linePoints)
+    {
+        std::vector<LinePoint> result;
+        
+        if (linePoints.size() > 2) {
+            for (unsigned int i = 2; i < linePoints.size(); ++i) {
+                auto prev2 = linePoints[i - 2];
+                auto prev1 = linePoints[i - 1];
+                auto cur = linePoints[i];
+                
+                Vec2 midPoint1 = (prev1.pos + prev2.pos) * .5;
+                Vec2 midPoint2 = (cur.pos + prev1.pos) * .5;
+                
+                int segmentDistance = 2;
+                float distance = (midPoint1 - midPoint2).getLength();
+                int numberOfSegments = MIN(128, MAX(floorf(distance / segmentDistance), 32));
+                
+                float t = 0.0f;
+                float step = 1.0f / numberOfSegments;
+                for (int j = 0; j < numberOfSegments; j++) {
+                    LinePoint newPoint;
+                    newPoint.pos = midPoint1 * powf(1 - t, 2) + prev1.pos * 2.0f * (1 - t) * t + midPoint2 * t * t;
+                    newPoint.width = powf(1 - t, 2) * ((prev1.width + prev2.width) * 0.5f) + 2.0f * (1 - t) * t * prev1.width + t * t * ((cur.width + prev1.width) * 0.5f);
+                    
+                    result.push_back(newPoint);
+                    t += step;
+                }
+                LinePoint finalPoint;
+                finalPoint.pos = midPoint2;
+                finalPoint.width = (cur.width + prev1.width) * 0.5f;
+                result.push_back(finalPoint);
+            }
+
+        }
+        
+        return result;
+    }
+    
     bool onTouchBegan(cocos2d::Touch *touch, cocos2d::Event *unused_event)
     {
         Vec2 location = touch->getLocation();
@@ -240,7 +285,7 @@ public:
     {
         Vec2 location = touch->getLocation();
 //        CCLOG("touch ended: %.2f %.2f", location.x, location.y);
-        CCLOG("line has points %lu", _points.size());
+//        CCLOG("line has points %lu", _points.size());
     }
     
     void onTouchCancelled(cocos2d::Touch *touch, cocos2d::Event *unused_event)
@@ -255,6 +300,7 @@ private:
     bool _connectingLine, _finishingLine;
     Vec2 _prevC, _prevD, _prevG, _prevI;
     float _overdraw;
+    bool _enableLineSmoothing;
     
     TrianglesCommand _triangleCommand;
     CustomCommand _customCommand;
