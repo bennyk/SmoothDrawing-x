@@ -13,15 +13,26 @@
 
 using namespace cocos2d;
 
-struct LinePoint {
-    Vec2 pos;
-    float width;
-    
-    LinePoint (Vec2 p, float w) : pos(p), width(w) {}
-    LinePoint() : pos {0, 0}, width {1.0} {}
-};
-
 class LineDrawer : public Node {
+    
+public:
+    static constexpr float defaultLineWidth = 1.0f;
+    
+    struct LinePoint {
+        Vec2 pos;
+        float width;
+        
+        LinePoint (Vec2 p, float w) : pos(p), width(w) {}
+        LinePoint() : pos {0, 0}, width {defaultLineWidth} {}
+    };
+    
+    struct CirclePoint {
+        Vec2 pos;
+        float width;
+        Vec2 dir;
+        CirclePoint (Vec2 p, float w, Vec2 d) : pos(p), width(w), dir(d) {}
+    };
+
     
 public:
     static LineDrawer *create()
@@ -84,7 +95,7 @@ public:
     
     float extractSize()
     {
-        return 1.0;
+        return defaultLineWidth;
     }
     
     static void triangulateRect(Vec2 A, Vec2 B, Vec2 C, Vec2 D, Color4F color, std::vector<V3F_C4B_T2F> &vertices, std::vector<unsigned short> &indices, float z = 0)
@@ -110,6 +121,72 @@ public:
         indices.push_back(startIndex + 1); //B
         indices.push_back(startIndex + 2); //C
         indices.push_back(startIndex + 3); //D
+    }
+    
+    static void triangulateCircle(CirclePoint circle, Color4F color, float overdraw, std::vector<V3F_C4B_T2F> &vertices, std::vector<unsigned short> &indices, float z = 0)
+    {
+        Color4F fadeOutColor = Color4F {};
+//        Color4F fadeOutColor = Color4F {1, 0, 0, .5};
+        
+        int numberOfSegments = 32;
+        float anglePerSegment = (float)(M_PI / (numberOfSegments - 1));
+        
+        //! we need to cover M_PI from this, dot product of normalized vectors is equal to cos angle between them... and if you include rightVec dot you get to know the correct direction :)
+        Vec2 perp = circle.dir.getPerp();
+        
+        float angle = acosf(perp.dot(Vec2 {0, 1}));
+        const float rightDot = perp.dot(Vec2 {1, 0});
+        if (rightDot < 0.0f) {
+            angle *= -1;
+        }
+        
+        const float radius = circle.width * .5;
+        const unsigned short centerIndex = vertices.size();
+        
+        vertices.push_back(V3F_C4B_T2F {Vec3 {circle.pos.x, circle.pos.y, z}, Color4B {color}, Tex2F {}});
+        
+        int prevIndex;
+        Vec2 prevPoint, prevDir;
+        for (unsigned int i = 0; i < numberOfSegments; ++i) {
+            Vec2 dir = Vec2 {sinf(angle), cosf(angle)};
+            Vec2 curPoint = Vec2 {circle.pos.x + radius * dir.x, circle.pos.y + radius * dir.y};
+            
+            int currentIndex = vertices.size();
+            vertices.push_back(V3F_C4B_T2F {Vec3 {curPoint.x, curPoint.y, z}, Color4B {color}, Tex2F {}});
+            
+            if (i > 0) {
+                indices.push_back(centerIndex);
+                indices.push_back(prevIndex);
+                indices.push_back(currentIndex);
+                
+//                CCLOG("circle %d %lu %lu", centerIndex, vertices.size() - 2, vertices.size() - 1);
+                
+                // triangulate a overdrawn rect
+                Vec2 prevOverdrawnPoint = prevPoint + prevDir * overdraw;
+                Vec2 currentOverdrawnPoint = curPoint + dir * overdraw;
+                
+                int prevOverdrawIndex = vertices.size();
+                vertices.push_back(V3F_C4B_T2F {Vec3 {prevOverdrawnPoint.x, prevOverdrawnPoint.y, z}, Color4B {fadeOutColor}, Tex2F {}});
+                
+                int curOverdrawIndex = vertices.size();
+                vertices.push_back(V3F_C4B_T2F {Vec3 {currentOverdrawnPoint.x, currentOverdrawnPoint.y, z}, Color4B {fadeOutColor}, Tex2F {}});
+                
+                indices.push_back(prevIndex);
+                indices.push_back(curOverdrawIndex);
+                indices.push_back(prevOverdrawIndex);
+                
+                indices.push_back(prevIndex);
+                indices.push_back(currentIndex);
+                indices.push_back(curOverdrawIndex);
+            }
+            
+            
+            prevIndex = currentIndex;
+            prevPoint = curPoint;
+            prevDir = dir;
+            angle += anglePerSegment;
+        }
+
     }
     
     virtual void draw(Renderer *renderer, const Mat4 &transform, uint32_t flags)
@@ -138,33 +215,32 @@ public:
     {
         const Color4F fadeOutColor {0, 0, 0, 0};
         
-        Vec2 prevPoint = linePoints[0].pos;
-        float prevValue = linePoints[0].width;
+        LinePoint &prevPoint = linePoints[0];
         
         _vertices.clear();
         _indices.clear();
         
+        std::vector<CirclePoint> circles;
+        
         for (int i = 1; i < linePoints.size(); i++) {
-            auto curPoint = linePoints[i].pos;
-            float curValue = linePoints[i].width;
+            auto curPoint = linePoints[i];
             
-            if (curPoint.fuzzyEquals(prevPoint, 0.0001f)) {
+            if (curPoint.pos.fuzzyEquals(prevPoint.pos, 0.0001f)) {
                 continue;
             }
             
-            Vec2 dir = curPoint - prevPoint;
+            Vec2 dir = curPoint.pos - prevPoint.pos;
             Vec2 perp = dir.getPerp().getNormalized();
-            Vec2 A = prevPoint + perp * prevValue / 2;
-            Vec2 B = prevPoint - perp * prevValue / 2;
-            Vec2 C = curPoint + perp * curValue / 2;
-            Vec2 D = curPoint - perp * curValue / 2;
+            Vec2 A = prevPoint.pos + perp * prevPoint.width / 2;
+            Vec2 B = prevPoint.pos - perp * prevPoint.width / 2;
+            Vec2 C = curPoint.pos + perp * curPoint.width / 2;
+            Vec2 D = curPoint.pos - perp * curPoint.width / 2;
             
             if (_connectingLine || _indices.size() > 0) {
                 A = _prevC;
                 B = _prevD;
-            } else if (_vertices.size() == 0) {
-//                [circlesPoints addObject:pointValue];
-//                [circlesPoints addObject:[linePoints objectAtIndex:i - 1]];
+            } else if (_indices.size() == 0) {
+                circles.push_back(CirclePoint {curPoint.pos, curPoint.width, (linePoints[i - 1].pos - curPoint.pos).getNormalized()});
             }
             
             triangulateRect(A, B, C, D, color, _vertices, _indices);
@@ -172,13 +248,11 @@ public:
             _prevD = D;
             _prevC = C;
             if (_finishingLine && (i == linePoints.size() - 1)) {
-//                [circlesPoints addObject:[linePoints objectAtIndex:i - 1]];
-//                [circlesPoints addObject:pointValue];
+                circles.push_back(CirclePoint {curPoint.pos, curPoint.width, (curPoint.pos - linePoints[i - 1].pos).getNormalized()});
                 _finishingLine = false;
             }
             
             prevPoint = curPoint;
-            prevValue = curValue;
             
             //! Add overdraw
             Vec2 F = A + perp * _overdraw;
@@ -197,7 +271,11 @@ public:
             triangulateRect(B, color, H, fadeOutColor, D, color, I, fadeOutColor, _vertices, _indices, 0);
         }
         
-        TrianglesCommand::Triangles trs{_vertices.data(), _indices.data(), static_cast<ssize_t>(_vertices.size()), static_cast<ssize_t>(_indices.size())};
+        for (auto c : circles) {
+            triangulateCircle(c, color, _overdraw, _vertices, _indices);
+        }
+        
+        TrianglesCommand::Triangles trs{&_vertices[0], &_indices[0], static_cast<ssize_t>(_vertices.size()), static_cast<ssize_t>(_indices.size())};
         _triangleCommand.init(getGlobalZOrder(), 0, getGLProgramState(), cocos2d::BlendFunc::ALPHA_PREMULTIPLIED, trs, transform, 0);
         renderer->addCommand(&_triangleCommand);
         
@@ -284,15 +362,14 @@ public:
     void onTouchEnded(cocos2d::Touch *touch, cocos2d::Event *unused_event)
     {
         Vec2 location = touch->getLocation();
+        float size = extractSize();
+        endLine(location, size);
 //        CCLOG("touch ended: %.2f %.2f", location.x, location.y);
 //        CCLOG("line has points %lu", _points.size());
     }
     
     void onTouchCancelled(cocos2d::Touch *touch, cocos2d::Event *unused_event)
     {
-        Vec2 location = touch->getLocation();
-        float size = extractSize();
-        endLine(location, size);
     }
     
 private:
