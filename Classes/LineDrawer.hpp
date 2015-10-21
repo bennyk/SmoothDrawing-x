@@ -10,8 +10,97 @@
 #define LineDrawer_hpp
 
 #include <stdio.h>
+#include <array>
 
 using namespace cocos2d;
+
+//using namespace std::chrono;
+
+class VelocityCalculator {
+    
+public:
+    using time_point = std::chrono::high_resolution_clock::time_point;
+    static constexpr int MaxVelocitySamples = 10;
+    static constexpr bool Debug = false;
+
+public:
+    VelocityCalculator () : _sampleCount(0), _runningVelocitySum(0, 0), _velocitySamples {}, _first(true) {
+    }
+    
+    void reset()
+    {
+        _sampleCount = 0;
+        _runningVelocitySum = Vec2 {0, 0};
+        _first = true;
+        _velocitySamples = {};
+    }
+    
+    void addLocation(Vec2 location)
+    {
+        using namespace std::chrono;
+        addLocation(location, high_resolution_clock::now());
+    }
+    
+    void addLocation(Vec2 location, time_point timestamp)
+    {
+        using namespace std::chrono;
+        
+        if (Debug)
+            CCLOG("adding location %.2f %.2f timestamp %.2lld", location.x, location.y, time_point_cast<milliseconds>(timestamp).time_since_epoch().count());
+        
+        if (!_first) {
+            high_resolution_clock::duration timeSinceLastUpdate = (timestamp - _prevTimestamp);
+            
+            if (Debug)
+                CCLOG("time since last update %.2lld", duration_cast<milliseconds>(timeSinceLastUpdate).count());
+            
+            Vec2 instVelocity = Vec2 {
+                (location.x - _prevLocation.x) / duration_cast<milliseconds>(timeSinceLastUpdate).count() * 1000,
+                (location.y - _prevLocation.y) / duration_cast<milliseconds>(timeSinceLastUpdate).count() * 1000
+            };
+            
+            int lastSampleIndex = _sampleCount % MaxVelocitySamples;
+            Vec2 lastSample = _velocitySamples[lastSampleIndex];
+            
+            _runningVelocitySum -= lastSample;
+            _runningVelocitySum += instVelocity;
+            
+            _velocitySamples[lastSampleIndex] = instVelocity;
+            _sampleCount++;
+        }
+        else {
+            _first = false;
+        }
+        
+        _prevLocation = location;
+        _prevTimestamp = timestamp;
+    }
+    
+    Vec2 getLastVelocitySample()
+    {
+        int lastSampleIndex = _sampleCount % MaxVelocitySamples;
+        return _velocitySamples[lastSampleIndex];
+    }
+    
+    int getSampleCount() { return _sampleCount; }
+    
+    Vec2 getRunningAvgVelocity()
+    {
+        return _sampleCount >= MaxVelocitySamples
+        ? Vec2 { _runningVelocitySum.x / MaxVelocitySamples, _runningVelocitySum.y / MaxVelocitySamples }
+        : Vec2 { _runningVelocitySum.x / _sampleCount, _runningVelocitySum.y / _sampleCount };
+    }
+    
+private:
+    bool _first;
+    time_point _prevTimestamp;
+    Vec2 _prevLocation;
+    
+    std::array<Vec2, MaxVelocitySamples> _velocitySamples;
+    int _sampleCount;
+    Vec2 _runningVelocitySum;
+    
+};
 
 class LineDrawer : public Node {
     
@@ -50,7 +139,7 @@ public:
         return node;
     }
     
-    LineDrawer () : _overdraw(.5), _enableLineSmoothing(true) {}
+    LineDrawer () : _overdraw(.5), _enableLineSmoothing(true), _lastSize(0.0) {}
     ~LineDrawer() {
         if (_renderTexture != nullptr)
             _renderTexture->release();
@@ -77,7 +166,6 @@ public:
         return true;
     }
     
-    
     void startNewLine(Vec2 point, float size)
     {
         _connectingLine = false;
@@ -93,9 +181,20 @@ public:
         _finishingLine = true;
     }
     
-    float extractSize()
+    float extractSize(Vec2 velocity)
     {
-        return defaultLineWidth;
+        float vel = velocity.getLength();
+        float size = vel / 166.0f;
+        size = clampf(size, 1, 40);
+        
+        if (_lastSize != 0.0) {
+            size = size * 0.8f + _lastSize * 0.2f;
+        }
+        _lastSize = size;
+        
+//        CCLOG("extracted size %.2f", size);
+
+        return size;
     }
     
     static void triangulateRect(Vec2 A, Vec2 B, Vec2 C, Vec2 D, Color4F color, std::vector<V3F_C4B_T2F> &vertices, std::vector<unsigned short> &indices, float z = 0)
@@ -165,10 +264,10 @@ public:
                 Vec2 prevOverdrawnPoint = prevPoint + prevDir * overdraw;
                 Vec2 currentOverdrawnPoint = curPoint + dir * overdraw;
                 
-                int prevOverdrawIndex = vertices.size();
+                auto prevOverdrawIndex = vertices.size();
                 vertices.push_back(V3F_C4B_T2F {Vec3 {prevOverdrawnPoint.x, prevOverdrawnPoint.y, z}, Color4B {fadeOutColor}, Tex2F {}});
                 
-                int curOverdrawIndex = vertices.size();
+                auto curOverdrawIndex = vertices.size();
                 vertices.push_back(V3F_C4B_T2F {Vec3 {currentOverdrawnPoint.x, currentOverdrawnPoint.y, z}, Color4B {fadeOutColor}, Tex2F {}});
                 
                 indices.push_back(prevIndex);
@@ -330,10 +429,16 @@ public:
         
         _points.clear();
         
-        float size = extractSize();
+        _velocityCalc.reset();
+        _velocityCalc.addLocation(location);
+        
+        _lastSize = 0.0;
+        float size = extractSize(_velocityCalc.getRunningAvgVelocity());
+        
         startNewLine(location, size);
         addPoint(location, size);
         addPoint(location, size);
+        
         
         return true;
     }
@@ -355,17 +460,24 @@ public:
             }
         }
         
-        float size = extractSize();
+        float size = extractSize(_velocityCalc.getRunningAvgVelocity());
         addPoint(location, size);
+        
+        _velocityCalc.addLocation(location);
+        Vec2 vel = _velocityCalc.getRunningAvgVelocity();
+        
+//        CCLOG("running velocity %.2f %.2f", vel.x, vel.y);
     }
     
     void onTouchEnded(cocos2d::Touch *touch, cocos2d::Event *unused_event)
     {
         Vec2 location = touch->getLocation();
-        float size = extractSize();
+        float size = extractSize(_velocityCalc.getRunningAvgVelocity());
         endLine(location, size);
 //        CCLOG("touch ended: %.2f %.2f", location.x, location.y);
 //        CCLOG("line has points %lu", _points.size());
+        
+        _velocityCalc.addLocation(location);
     }
     
     void onTouchCancelled(cocos2d::Touch *touch, cocos2d::Event *unused_event)
@@ -386,6 +498,8 @@ private:
     std::vector<unsigned short> _indices;
     
     RenderTexture *_renderTexture;
+    VelocityCalculator _velocityCalc;
+    float _lastSize;
 
 };
 
