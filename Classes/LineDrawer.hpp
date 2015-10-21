@@ -57,21 +57,27 @@ public:
     ~LineDrawer() {
         if (_renderTexture != nullptr)
             _renderTexture->release();
+        
+        if (_panGestureRecognizer != nullptr)
+            _panGestureRecognizer->release();
+        
+        if (_longPressGestureRecognizer != nullptr)
+            _longPressGestureRecognizer->release();
     }
     
     virtual bool init()
     {
-        PanGestureRecognizer *panGestureRecognizer = PanGestureRecognizer::create();
-        panGestureRecognizer->retain();
+        _panGestureRecognizer = PanGestureRecognizer::create();
+        _panGestureRecognizer->retain();
         
-        panGestureRecognizer->setTarget(CC_CALLBACK_1(LineDrawer::handlePanGestureRecognizer, this));
-        panGestureRecognizer->addWithSceneGraphPriority(this->getEventDispatcher(), this);
+        _panGestureRecognizer->setTarget(CC_CALLBACK_1(LineDrawer::handlePanGestureRecognizer, this));
+        _panGestureRecognizer->addWithSceneGraphPriority(this->getEventDispatcher(), this);
         
-        LongPressGestureRecognizer *longPressGestureRecognizer = LongPressGestureRecognizer::create();
-        longPressGestureRecognizer->retain();
+        _longPressGestureRecognizer = LongPressGestureRecognizer::create();
+        _longPressGestureRecognizer->retain();
         
-        longPressGestureRecognizer->setTarget(CC_CALLBACK_1(LineDrawer::handleLongPressGestureRecognizer, this));
-        longPressGestureRecognizer->addWithSceneGraphPriority(this->getEventDispatcher(), this);
+        _longPressGestureRecognizer->setTarget(CC_CALLBACK_1(LineDrawer::handleLongPressGestureRecognizer, this));
+        _longPressGestureRecognizer->addWithSceneGraphPriority(this->getEventDispatcher(), this);
         
         Size size = Director::getInstance()->getWinSize();
         _renderTexture = RenderTexture::create(size.width, size.height, Texture2D::PixelFormat::RGBA8888);
@@ -413,8 +419,10 @@ private:
     Vec2 _prevC, _prevD, _prevG, _prevI;
     bool _enableLineSmoothing;
     
+    PanGestureRecognizer *_panGestureRecognizer;
+    LongPressGestureRecognizer *_longPressGestureRecognizer;
+    
     TrianglesCommand _triangleCommand;
-    CustomCommand _customCommand;
     
     std::vector<V3F_C4B_T2F> _vertices;
     std::vector<unsigned short> _indices;
