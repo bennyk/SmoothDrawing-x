@@ -10,109 +10,23 @@
 #define LineDrawer_hpp
 
 #include <stdio.h>
-#include <array>
+#include "GestureRecognizers.hpp"
 
 using namespace cocos2d;
-
-//using namespace std::chrono;
-
-class VelocityCalculator {
-    
-public:
-    using time_point = std::chrono::high_resolution_clock::time_point;
-    static constexpr int MaxVelocitySamples = 10;
-    static constexpr bool Debug = false;
-
-public:
-    VelocityCalculator () : _sampleCount(0), _runningVelocitySum(0, 0), _velocitySamples {}, _first(true) {
-    }
-    
-    void reset()
-    {
-        _sampleCount = 0;
-        _runningVelocitySum = Vec2 {0, 0};
-        _first = true;
-        _velocitySamples = {};
-    }
-    
-    void addLocation(Vec2 location)
-    {
-        using namespace std::chrono;
-        addLocation(location, high_resolution_clock::now());
-    }
-    
-    void addLocation(Vec2 location, time_point timestamp)
-    {
-        using namespace std::chrono;
-        
-        if (Debug)
-            CCLOG("adding location %.2f %.2f timestamp %.2lld", location.x, location.y, time_point_cast<milliseconds>(timestamp).time_since_epoch().count());
-        
-        if (!_first) {
-            high_resolution_clock::duration timeSinceLastUpdate = (timestamp - _prevTimestamp);
-            
-            if (Debug)
-                CCLOG("time since last update %.2lld", duration_cast<milliseconds>(timeSinceLastUpdate).count());
-            
-            Vec2 instVelocity = Vec2 {
-                (location.x - _prevLocation.x) / duration_cast<milliseconds>(timeSinceLastUpdate).count() * 1000,
-                (location.y - _prevLocation.y) / duration_cast<milliseconds>(timeSinceLastUpdate).count() * 1000
-            };
-            
-            int lastSampleIndex = _sampleCount % MaxVelocitySamples;
-            Vec2 lastSample = _velocitySamples[lastSampleIndex];
-            
-            _runningVelocitySum -= lastSample;
-            _runningVelocitySum += instVelocity;
-            
-            _velocitySamples[lastSampleIndex] = instVelocity;
-            _sampleCount++;
-        }
-        else {
-            _first = false;
-        }
-        
-        _prevLocation = location;
-        _prevTimestamp = timestamp;
-    }
-    
-    Vec2 getLastVelocitySample()
-    {
-        int lastSampleIndex = _sampleCount % MaxVelocitySamples;
-        return _velocitySamples[lastSampleIndex];
-    }
-    
-    int getSampleCount() { return _sampleCount; }
-    
-    Vec2 getRunningAvgVelocity()
-    {
-        return _sampleCount >= MaxVelocitySamples
-        ? Vec2 { _runningVelocitySum.x / MaxVelocitySamples, _runningVelocitySum.y / MaxVelocitySamples }
-        : Vec2 { _runningVelocitySum.x / _sampleCount, _runningVelocitySum.y / _sampleCount };
-    }
-    
-private:
-    bool _first;
-    time_point _prevTimestamp;
-    Vec2 _prevLocation;
-    
-    std::array<Vec2, MaxVelocitySamples> _velocitySamples;
-    int _sampleCount;
-    Vec2 _runningVelocitySum;
-    
-};
 
 class LineDrawer : public Node {
     
 public:
-    static constexpr float defaultLineWidth = 1.0f;
+    static constexpr float DefaultLineWidth = 1.0f;
+    static constexpr float Overdraw = .5f;
+    static const Color4F BackgroundColor;
     
     struct LinePoint {
         Vec2 pos;
         float width;
         
         LinePoint (Vec2 p, float w) : pos(p), width(w) {}
-        LinePoint() : pos {0, 0}, width {defaultLineWidth} {}
+        LinePoint() : pos {0, 0}, width {DefaultLineWidth} {}
     };
     
     struct CirclePoint {
@@ -139,7 +53,7 @@ public:
         return node;
     }
     
-    LineDrawer () : _overdraw(.5), _enableLineSmoothing(true), _lastSize(0.0) {}
+    LineDrawer () : _enableLineSmoothing(true), _lastSize(0.0) {}
     ~LineDrawer() {
         if (_renderTexture != nullptr)
             _renderTexture->release();
@@ -147,23 +61,94 @@ public:
     
     virtual bool init()
     {
-        auto eventListener = EventListenerTouchOneByOne::create();
-        eventListener->onTouchBegan = CC_CALLBACK_2(LineDrawer::onTouchBegan, this);
-        eventListener->onTouchMoved = CC_CALLBACK_2(LineDrawer::onTouchMoved, this);
-        eventListener->onTouchEnded = CC_CALLBACK_2(LineDrawer::onTouchEnded, this);
-        eventListener->onTouchCancelled = CC_CALLBACK_2(LineDrawer::onTouchCancelled, this);
-        this->getEventDispatcher()->addEventListenerWithSceneGraphPriority(eventListener, this);
+        PanGestureRecognizer *panGestureRecognizer = PanGestureRecognizer::create();
+        panGestureRecognizer->retain();
+        
+        panGestureRecognizer->setTarget(CC_CALLBACK_1(LineDrawer::handlePanGestureRecognizer, this));
+        panGestureRecognizer->addWithSceneGraphPriority(this->getEventDispatcher(), this);
+        
+        LongPressGestureRecognizer *longPressGestureRecognizer = LongPressGestureRecognizer::create();
+        longPressGestureRecognizer->retain();
+        
+        longPressGestureRecognizer->setTarget(CC_CALLBACK_1(LineDrawer::handleLongPressGestureRecognizer, this));
+        longPressGestureRecognizer->addWithSceneGraphPriority(this->getEventDispatcher(), this);
         
         Size size = Director::getInstance()->getWinSize();
         _renderTexture = RenderTexture::create(size.width, size.height, Texture2D::PixelFormat::RGBA8888);
         _renderTexture->retain();
         
-        _renderTexture->clear(1.0, 1.0, 1.0, 1.0);
+        _renderTexture->clear(BackgroundColor.r, BackgroundColor.g, BackgroundColor.b, BackgroundColor.a);
         _renderTexture->setAnchorPoint(Vec2 {0, 0});
         _renderTexture->setPosition(Vec2 {size.width * .5f, size.height * .5f});
         this->addChild(_renderTexture);
         
         return true;
+    }
+    
+    void handleLongPressGestureRecognizer(BasicGestureRecognizer *r)
+    {
+//        LongPressGestureRecognizer *recognizer = static_cast<LongPressGestureRecognizer *>(r);
+//        CCLOG("got long press");
+        _renderTexture->beginWithClear(BackgroundColor.r, BackgroundColor.g, BackgroundColor.b, BackgroundColor.a);
+        _renderTexture->end();
+    }
+    
+    void handlePanGestureRecognizer(BasicGestureRecognizer *r)
+    {
+//        CCLOG("received gesture %d", recognizer->getState());
+        PanGestureRecognizer *recognizer = static_cast<PanGestureRecognizer *>(r);
+        
+        switch (recognizer->getState()) {
+            case PanGestureRecognizer::Began: {
+                Vec2 location = recognizer->getLocation();
+                //        CCLOG("touch began: %.2f %.2f", location.x, location.y);
+
+                _points.clear();
+                
+                _lastSize = 0.0;
+                float size = extractSize(recognizer->getVelocity());
+                
+                startNewLine(location, size);
+                addPoint(location, size);
+                addPoint(location, size);
+
+                break;
+            }
+                
+            case PanGestureRecognizer::Changed: {
+                Vec2 location = recognizer->getLocation();
+                //        CCLOG("touch moved: %.2f %.2f", location.x, location.y);
+                
+                //! skip points that are too close
+                float eps = 1.5f;
+                if (_points.size() > 0) {
+                    auto v = _points.back().pos - location;
+                    float length = v.getLength();
+                    
+                    if (length < eps) {
+                        return;
+                    } else {
+                    }
+                }
+                
+                float size = extractSize(recognizer->getVelocity());
+                addPoint(location, size);
+                break;
+            }
+                
+            case PanGestureRecognizer::Completed: {
+                Vec2 location = recognizer->getLocation();
+                float size = extractSize(recognizer->getVelocity());
+                endLine(location, size);
+                //        CCLOG("touch ended: %.2f %.2f", location.x, location.y);
+                //        CCLOG("line has points %lu", _points.size());
+                
+                break;
+            }
+                
+            default:
+                break;
+        }
     }
     
     void startNewLine(Vec2 point, float size)
@@ -354,10 +339,10 @@ public:
             prevPoint = curPoint;
             
             //! Add overdraw
-            Vec2 F = A + perp * _overdraw;
-            Vec2 G = C + perp * _overdraw;
-            Vec2 H = B - perp * _overdraw;
-            Vec2 I = D - perp * _overdraw;
+            Vec2 F = A + perp * Overdraw;
+            Vec2 G = C + perp * Overdraw;
+            Vec2 H = B - perp * Overdraw;
+            Vec2 I = D - perp * Overdraw;
             
             if (_connectingLine || _indices.size() > 6) {
                 F = _prevG;
@@ -371,7 +356,7 @@ public:
         }
         
         for (auto c : circles) {
-            triangulateCircle(c, color, _overdraw, _vertices, _indices);
+            triangulateCircle(c, color, Overdraw, _vertices, _indices);
         }
         
         TrianglesCommand::Triangles trs{&_vertices[0], &_indices[0], static_cast<ssize_t>(_vertices.size()), static_cast<ssize_t>(_indices.size())};
@@ -422,73 +407,10 @@ public:
         return result;
     }
     
-    bool onTouchBegan(cocos2d::Touch *touch, cocos2d::Event *unused_event)
-    {
-        Vec2 location = touch->getLocation();
-//        CCLOG("touch began: %.2f %.2f", location.x, location.y);
-        
-        _points.clear();
-        
-        _velocityCalc.reset();
-        _velocityCalc.addLocation(location);
-        
-        _lastSize = 0.0;
-        float size = extractSize(_velocityCalc.getRunningAvgVelocity());
-        
-        startNewLine(location, size);
-        addPoint(location, size);
-        addPoint(location, size);
-        
-        
-        return true;
-    }
-    
-    void onTouchMoved(Touch *touch, Event *event)
-    {
-        Vec2 location = touch->getLocation();
-//        CCLOG("touch moved: %.2f %.2f", location.x, location.y);
-        
-        //! skip points that are too close
-        float eps = 1.5f;
-        if (_points.size() > 0) {
-            auto v = _points.back().pos - location;
-            float length = v.getLength();
-            
-            if (length < eps) {
-                return;
-            } else {
-            }
-        }
-        
-        float size = extractSize(_velocityCalc.getRunningAvgVelocity());
-        addPoint(location, size);
-        
-        _velocityCalc.addLocation(location);
-        Vec2 vel = _velocityCalc.getRunningAvgVelocity();
-        
-//        CCLOG("running velocity %.2f %.2f", vel.x, vel.y);
-    }
-    
-    void onTouchEnded(cocos2d::Touch *touch, cocos2d::Event *unused_event)
-    {
-        Vec2 location = touch->getLocation();
-        float size = extractSize(_velocityCalc.getRunningAvgVelocity());
-        endLine(location, size);
-//        CCLOG("touch ended: %.2f %.2f", location.x, location.y);
-//        CCLOG("line has points %lu", _points.size());
-        
-        _velocityCalc.addLocation(location);
-    }
-    
-    void onTouchCancelled(cocos2d::Touch *touch, cocos2d::Event *unused_event)
-    {
-    }
-    
 private:
     std::vector<LinePoint> _points;
     bool _connectingLine, _finishingLine;
     Vec2 _prevC, _prevD, _prevG, _prevI;
-    float _overdraw;
     bool _enableLineSmoothing;
     
     TrianglesCommand _triangleCommand;
@@ -498,7 +420,6 @@ private:
     std::vector<unsigned short> _indices;
     
     RenderTexture *_renderTexture;
-    VelocityCalculator _velocityCalc;
     float _lastSize;
 
 };

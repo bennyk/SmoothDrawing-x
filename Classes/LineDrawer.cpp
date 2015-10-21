@@ -7,3 +7,6 @@
 //
 
 #include "LineDrawer.hpp"
+
+
+const Color4F LineDrawer::BackgroundColor = Color4F {1.0, 1.0, 1.0, 1.0};

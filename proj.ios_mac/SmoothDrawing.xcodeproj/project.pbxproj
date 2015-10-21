@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		195D717E1BD7C91100971723 /* GestureRecognizers.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 195D717C1BD7C91100971723 /* GestureRecognizers.cpp */; settings = {ASSET_TAGS = (); }; };
 		1960081E1BD3EB17003FEBEC /* LineDrawer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1960081C1BD3EB17003FEBEC /* LineDrawer.cpp */; settings = {ASSET_TAGS = (); }; };
 		1AC6FB21180E996B004C840B /* libcocos2d Mac.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1AC6FAF9180E9839004C840B /* libcocos2d Mac.a */; };
 		1AC6FB30180E99EB004C840B /* libcocos2d iOS.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 1AC6FB07180E9839004C840B /* libcocos2d iOS.a */; };
@@ -104,6 +105,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		195D717C1BD7C91100971723 /* GestureRecognizers.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = GestureRecognizers.cpp; sourceTree = "<group>"; };
+		195D717D1BD7C91100971723 /* GestureRecognizers.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = GestureRecognizers.hpp; sourceTree = "<group>"; };
 		1960081C1BD3EB17003FEBEC /* LineDrawer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = LineDrawer.cpp; sourceTree = "<group>"; };
 		1960081D1BD3EB17003FEBEC /* LineDrawer.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; path = LineDrawer.hpp; sourceTree = "<group>"; };
 		1AC6FAE5180E9839004C840B /* cocos2d_libs.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; name = cocos2d_libs.xcodeproj; path = ../cocos2d/build/cocos2d_libs.xcodeproj; sourceTree = "<group>"; };
@@ -306,6 +309,8 @@
 				46880B8719C43A87006E1F66 /* HelloWorldScene.h */,
 				1960081C1BD3EB17003FEBEC /* LineDrawer.cpp */,
 				1960081D1BD3EB17003FEBEC /* LineDrawer.hpp */,
+				195D717C1BD7C91100971723 /* GestureRecognizers.cpp */,
+				195D717D1BD7C91100971723 /* GestureRecognizers.hpp */,
 			);
 			name = Classes;
 			path = ../Classes;
@@ -499,6 +504,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				195D717E1BD7C91100971723 /* GestureRecognizers.cpp in Sources */,
 				46880B8819C43A87006E1F66 /* AppDelegate.cpp in Sources */,
 				46880B8A19C43A87006E1F66 /* HelloWorldScene.cpp in Sources */,
 				1960081E1BD3EB17003FEBEC /* LineDrawer.cpp in Sources */,
