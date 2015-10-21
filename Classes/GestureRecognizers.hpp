@@ -103,7 +103,7 @@ private:
 class BasicGestureRecognizer : public Ref
 {
 public:
-    enum State { Possible, Began, Changed, Completed };
+    enum State { Possible, Began, Changed, Completed, Failed };
     using targetCallBack = std::function<void(BasicGestureRecognizer*)>;
 
 public:
@@ -208,6 +208,9 @@ public:
     static constexpr long long MinimumPressDurationMilliSecs = 500;
     static constexpr float AllowableMovement = 10.0;
     using time_point = std::chrono::high_resolution_clock::time_point;
+    
+private:
+    static constexpr const char *UpdateKey = "LongPressGestureUpdate";
 
 public:
     static LongPressGestureRecognizer *create()
@@ -227,24 +230,26 @@ public:
     
     void addWithSceneGraphPriority(EventDispatcher *eventDispatcher, Node *node)
     {
-        auto eventListener = EventListenerTouchOneByOne::create();
+        reset();
         
+        auto eventListener = EventListenerTouchOneByOne::create();
+
         eventListener->onTouchBegan = [this] (Touch *touch, Event *event) -> bool {
             _state = Began;
             _startLocation = touch->getLocation();
             _startTime = std::chrono::high_resolution_clock::now();
+            this->scheduleUpdate();
             return true;
         };
         
         eventListener->onTouchMoved = [this] (Touch *touch, Event *event) {
             
             if (_state == Began || _state == Changed) {
-                
                 if ( checkLongPress(touch) ) {
-                    _state = Completed;
+                    _state = Changed;
                     _target(this);
                 } else {
-                    _state = Changed;
+                    reset();
                 }
             }
         };
@@ -254,12 +259,20 @@ public:
                 if ( checkLongPress(touch) ) {
                     _state = Completed;
                     _target(this);
+                } else {
+                    reset();
                 }
             }
-            _state = Possible;
         };
         
         eventDispatcher->addEventListenerWithSceneGraphPriority(eventListener, node);
+        _node = node;
+    }
+    
+    void reset()
+    {
+        _state = Possible;
+        this->removeUpdate();
     }
     
     bool checkLongPress(Touch *touch)
@@ -280,9 +293,41 @@ public:
         return result;
     }
     
+    void scheduleUpdate()
+    {
+        CC_ASSERT(_node != nullptr);
+        
+        // test if gesture is holding on one spot longer than MinimumPressDurationMilliSecs.
+        
+        _node->schedule([this](float dt) {
+            using namespace std::chrono;
+            
+//            CCLOG("received long gesture update");
+            if (_state == Began || _state == Changed) {
+                
+                auto duration = duration_cast<milliseconds>(high_resolution_clock::now() - _startTime).count();
+                if (duration > MinimumPressDurationMilliSecs) {
+                    _state = Changed;
+                    _target(this);
+                    reset();
+                }
+            }
+        }, UpdateKey);
+        
+    }
+    
+    void removeUpdate()
+    {
+//        CCLOG("remove long gesture update");
+        if (_node != nullptr) {
+            _node->unschedule(UpdateKey);
+        }
+    }
+    
 private:
     Vec2 _startLocation;
     time_point _startTime;
+    Node *_node;
 
 };
 
