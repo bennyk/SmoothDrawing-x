@@ -2,7 +2,7 @@
 Draw smooth lines on Cocos2d-X.
 
 This project is an extension to the excellent tutorial posted at [drawing-smooth-lines-with-cocos2d-ios-inspired-by-paper]
-(http://merowing.info/2012/04/drawing-smooth-lines-with-cocos2d-ios-inspired-by-paper) by Krzysztof
+(http://merowing.info/2012/04/drawing-smooth-lines-with-cocos2d-ios-inspired-by-paper) by Krzysztof,
 to Cocos2d-x (a cross-platform game engine framework for mobile). Rather than attempt to divert from the original and be different, it follows throughoutly the concepts and theories in the tutorial so that students are able to cross reference both materials (at least it is truth for the moment of writing).
 
 I thought it can be an interesting educational walk-through to demo certain programming concepts adopted in cocos2d-x
